@@ -60,8 +60,15 @@ The executable is written to `dist\PMDG Livery Drop Installer.exe`.
 
 The app reads the MSFS 2024 `UserCfg.opt` files used by Steam and the Microsoft
 Store/Xbox version, then looks for `Community` or `Community2024`. You can
-always override the detected folder with **Change…**. It never searches or
-writes to a broad drive root.
+always browse to a different Community folder. The installer uses this folder
+to find the installed PMDG aircraft.
+
+By default it places the new companion livery package in that same Community
+folder. In the desktop app you can instead select **An external folder** and
+use its **Browse…** button, which is useful for an Addons Linker library or a
+separate add-on drive. The selected external folder receives the
+`pmdg-aircraft-*-liveries` package; the base PMDG aircraft is never copied or
+modified.
 
 For a selected product such as `pmdg-aircraft-77w`, the normal destination is:
 
@@ -94,6 +101,7 @@ The GUI is the intended workflow, but these commands are handy for validation:
 python .\pmdg_livery_installer.py --detect
 python .\pmdg_livery_installer.py --community "D:\MSFS 2024\Packages\Community" --list-products
 python .\pmdg_livery_installer.py --community "D:\MSFS 2024\Packages\Community" --install "D:\Downloads\Livery.zip"
+python .\pmdg_livery_installer.py --community "D:\MSFS 2024\Packages\Community" --destination "E:\MSFS Addons\PMDG Liveries" --install "D:\Downloads\Livery.zip"
 ```
 
 The installer determines the aircraft from the ZIP's internal PMDG package

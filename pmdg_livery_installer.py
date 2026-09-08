@@ -57,6 +57,7 @@ class Product:
 
     base_name: str
     community: Path
+    destination_root: Path | None = None
 
     @property
     def base_package(self) -> Path:
@@ -64,7 +65,17 @@ class Product:
 
     @property
     def livery_package(self) -> Path:
-        return self.community / f"{self.base_name}-liveries"
+        return self.install_root / f"{self.base_name}-liveries"
+
+    @property
+    def install_root(self) -> Path:
+        """Folder that receives the companion livery package.
+
+        Normally this is the PMDG Community folder. It may instead be a
+        user-selected external add-on folder, such as an Addons Linker source.
+        """
+
+        return self.destination_root or self.community
 
     @property
     def display_name(self) -> str:
@@ -379,7 +390,7 @@ def aircraft_folder_for(product: Product) -> str:
 
 
 def ensure_livery_package(product: Product) -> Path:
-    """Create a minimal separate livery package; never modify the base aircraft."""
+    """Create a separate livery package; never modify the base aircraft."""
 
     destination = product.livery_package
     if destination.exists() and not destination.is_dir():
@@ -737,8 +748,8 @@ def install_livery(
 
         report(f"Preparing the {product.display_name} livery package…")
         destination = ensure_livery_package(product)
-        if not is_relative_to(destination, product.community):
-            raise InstallError("Refusing to write outside the selected Community folder.")
+        if not is_relative_to(destination, product.install_root):
+            raise InstallError("Refusing to write outside the selected installation folder.")
         package_source = find_package_source(source)
         simobjects_source = find_simobjects_source(source)
         copied = 0
@@ -822,6 +833,11 @@ def run_cli(args: argparse.Namespace) -> int:
                 if not detection.product_name:
                     raise InstallError("Could not identify the PMDG aircraft inside this ZIP; use --product.")
                 product = product_by_name(community, detection.product_name)
+            if args.destination:
+                destination = normalized(args.destination)
+                if not destination.is_dir():
+                    raise InstallError(f"The external installation folder does not exist: {destination}")
+                product = Product(product.base_name, product.community, destination)
             result = install_livery(args.install, product, args.overwrite)
         except InstallError as error:
             print(f"ERROR: {error}", file=sys.stderr)
@@ -835,6 +851,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Install MSFS 2024-native PMDG liveries.")
     parser.add_argument("--detect", action="store_true", help="Print detected Community folders.")
     parser.add_argument("--community", help="MSFS 2024 Community folder.")
+    parser.add_argument(
+        "--destination",
+        help="External folder that will receive the PMDG livery package. Defaults to --community.",
+    )
     parser.add_argument("--list-products", action="store_true", help="List PMDG aircraft products in Community.")
     parser.add_argument("--product", help="Override detected PMDG product, e.g. pmdg-aircraft-77w.")
     parser.add_argument("--install", metavar="ZIP_OR_FOLDER", help="Install a livery without opening the UI.")
@@ -867,9 +887,15 @@ def launch_gui() -> None:
         def __init__(self) -> None:
             self.root = root
             self.root.title("PMDG Livery Drop Installer — MSFS 2024")
-            self.root.minsize(720, 500)
+            self.root.minsize(720, 580)
             self.root.configure(bg="#10202f")
             self.community_var = tk.StringVar(value=str(choose_initial_community() or ""))
+            saved_settings = load_settings()
+            saved_external = saved_settings.get("external_install_folder")
+            self.external_folder_var = tk.StringVar(
+                value=saved_external if isinstance(saved_external, str) and Path(saved_external).is_dir() else ""
+            )
+            self.destination_mode_var = tk.StringVar(value="community")
             self.product_var = tk.StringVar()
             self.replace_var = tk.BooleanVar(value=False)
             self.status_var = tk.StringVar(value="Drop a livery ZIP to auto-detect its PMDG aircraft.")
@@ -901,19 +927,40 @@ def launch_gui() -> None:
 
             settings = ttk.Frame(outer, style="Card.TFrame", padding=16)
             settings.pack(fill="x")
-            ttk.Label(settings, text="MSFS 2024 Community folder", style="Card.TLabel").grid(row=0, column=0, sticky="w")
+            ttk.Label(settings, text="Installed PMDG Community folder", style="Card.TLabel").grid(row=0, column=0, sticky="w")
             self.community_entry = ttk.Entry(settings, textvariable=self.community_var, width=76)
             self.community_entry.grid(row=1, column=0, sticky="ew", pady=(5, 10))
-            ttk.Button(settings, text="Change…", command=self.pick_community).grid(row=1, column=1, padx=(10, 0), pady=(5, 10))
-            ttk.Label(settings, text="PMDG aircraft (auto-detected from ZIP when possible)", style="Card.TLabel").grid(row=2, column=0, sticky="w")
+            ttk.Button(settings, text="Browse…", command=self.pick_community).grid(row=1, column=1, padx=(10, 0), pady=(5, 10))
+            ttk.Label(settings, text="Install liveries in", style="Card.TLabel").grid(row=2, column=0, sticky="w")
+            ttk.Radiobutton(
+                settings,
+                text="My Community folder (recommended)",
+                variable=self.destination_mode_var,
+                value="community",
+                command=self.update_destination_status,
+            ).grid(row=3, column=0, sticky="w", pady=(5, 2))
+            external_destination = ttk.Frame(settings, style="Card.TFrame")
+            external_destination.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(2, 10))
+            ttk.Radiobutton(
+                external_destination,
+                text="An external folder",
+                variable=self.destination_mode_var,
+                value="external",
+                command=self.update_destination_status,
+            ).grid(row=0, column=0, sticky="w")
+            self.external_entry = ttk.Entry(external_destination, textvariable=self.external_folder_var, width=58)
+            self.external_entry.grid(row=0, column=1, sticky="ew", padx=(10, 0))
+            ttk.Button(external_destination, text="Browse…", command=self.pick_external_folder).grid(row=0, column=2, padx=(10, 0))
+            external_destination.columnconfigure(1, weight=1)
+            ttk.Label(settings, text="PMDG aircraft (auto-detected from ZIP when possible)", style="Card.TLabel").grid(row=5, column=0, sticky="w")
             self.product_combo = ttk.Combobox(settings, textvariable=self.product_var, state="readonly", width=64)
-            self.product_combo.grid(row=3, column=0, sticky="ew", pady=(5, 0))
-            ttk.Button(settings, text="Rescan", command=self.refresh_products).grid(row=3, column=1, padx=(10, 0), pady=(5, 0))
+            self.product_combo.grid(row=6, column=0, sticky="ew", pady=(5, 0))
+            ttk.Button(settings, text="Rescan", command=self.refresh_products).grid(row=6, column=1, padx=(10, 0), pady=(5, 0))
             settings.columnconfigure(0, weight=1)
 
             drop = tk.Label(
                 outer,
-                text="DROP A PMDG MSFS 2024 LIVERY ZIP HERE\n\nThe aircraft and destination package are detected automatically.",
+                text="DROP A PMDG MSFS 2024 LIVERY ZIP HERE\n\nThe aircraft is detected automatically and installed in your selected folder.",
                 bg="#0d4d6a",
                 fg="#ffffff",
                 font=("Segoe UI", 13, "bold"),
@@ -946,6 +993,43 @@ def launch_gui() -> None:
                 self.community_var.set(folder)
                 self.refresh_products()
 
+        def pick_external_folder(self) -> None:
+            folder = filedialog.askdirectory(title="Select an external folder for PMDG livery packages")
+            if folder:
+                self.external_folder_var.set(folder)
+                self.destination_mode_var.set("external")
+                self.update_destination_status()
+
+        def installation_root(self) -> Path:
+            if self.destination_mode_var.get() != "external":
+                return normalized(self.community_var.get().strip())
+            external_folder = self.external_folder_var.get().strip()
+            if not external_folder:
+                raise InstallError("Choose an external installation folder first.")
+            destination = normalized(external_folder)
+            if not destination.is_dir():
+                raise InstallError(f"The external installation folder does not exist: {destination}")
+            return destination
+
+        def save_folder_settings(self) -> None:
+            save_settings(
+                {
+                    "community_folder": str(normalized(self.community_var.get().strip())) if self.community_var.get().strip() else "",
+                    "external_install_folder": self.external_folder_var.get().strip(),
+                }
+            )
+
+        def update_destination_status(self) -> None:
+            self.save_folder_settings()
+            if self.destination_mode_var.get() == "external":
+                folder = self.external_folder_var.get().strip()
+                if folder:
+                    self.status_var.set(f"Liveries will be installed in external folder: {folder}")
+                else:
+                    self.status_var.set("Choose an external folder before installing a livery.")
+            else:
+                self.status_var.set("Liveries will be installed in the selected Community folder.")
+
         def refresh_products(self) -> None:
             community = self.community_var.get().strip()
             self.products.clear()
@@ -959,7 +1043,7 @@ def launch_gui() -> None:
             self.product_combo["values"] = list(self.products)
             if self.product_var.get() not in self.products:
                 self.product_var.set(next(iter(self.products), ""))
-            save_settings({"community_folder": str(normalized(community))})
+            self.save_folder_settings()
             if products:
                 self.status_var.set(f"Found {len(products)} PMDG product(s). Drop a ZIP to detect and install it.")
             else:
@@ -1004,7 +1088,7 @@ def launch_gui() -> None:
                 if product.base_name == detection.product_name:
                     self.product_var.set(label)
                     self.status_var.set(f"Detected {product.display_name} from the ZIP. Installing…")
-                    return product
+                    return Product(product.base_name, product.community, self.installation_root())
             expected = AIRCRAFT_NAMES[detection.product_name]
             raise InstallError(f"Detected {expected}, but that PMDG product is not installed in the selected Community folder.")
 
@@ -1058,7 +1142,7 @@ def launch_gui() -> None:
             self.progress_bar.stop()
             self.drop_zone.configure(
                 bg="#0d4d6a",
-                text="DROP A PMDG MSFS 2024 LIVERY ZIP HERE\n\nThe aircraft and destination package are detected automatically.",
+                text="DROP A PMDG MSFS 2024 LIVERY ZIP HERE\n\nThe aircraft is detected automatically and installed in your selected folder.",
             )
             if error:
                 self.status_var.set(f"Install failed: {error}")

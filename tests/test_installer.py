@@ -182,6 +182,23 @@ class InstallerTests(unittest.TestCase):
         installed = result.livery_package / "SimObjects" / "Airplanes" / "PMDG 777-300ER" / "liveries" / "pmdg" / "Direct Livery"
         self.assertTrue((installed / "texture.example" / "main.png").is_file())
 
+    def test_installs_into_a_user_selected_external_folder(self):
+        source = self.root / "External Livery"
+        (source / "texture.example").mkdir(parents=True)
+        (source / "livery.cfg").write_text("title=External\n", encoding="utf-8")
+        (source / "livery.json").write_text('{"productPackage": "pmdg-aircraft-77w"}\n', encoding="utf-8")
+        (source / "texture.example" / "main.png").write_bytes(b"paint")
+        external_root = self.root / "External PMDG Liveries"
+        external_root.mkdir()
+        external_product = installer.Product("pmdg-aircraft-77w", self.community, external_root)
+
+        result = installer.install_livery(source, external_product)
+
+        installed = external_root / "pmdg-aircraft-77w-liveries" / "SimObjects" / "Airplanes" / "PMDG 777-300ER" / "liveries" / "pmdg" / "External Livery"
+        self.assertTrue((installed / "texture.example" / "main.png").is_file())
+        self.assertFalse((self.community / "pmdg-aircraft-77w-liveries").exists())
+        self.assertEqual(result.livery_package.parent, external_root)
+
     def test_refuses_second_install_unless_overwrite_is_requested(self):
         source = self.root / "Direct Livery"
         (source / "texture.example").mkdir(parents=True)
