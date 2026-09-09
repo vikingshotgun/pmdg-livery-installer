@@ -199,6 +199,29 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.community / "pmdg-aircraft-77w-liveries").exists())
         self.assertEqual(result.livery_package.parent, external_root)
 
+    def test_flat_livery_uses_livery_id_instead_of_temporary_folder_name(self):
+        source = self.root / "livery"
+        (source / "texture.example").mkdir(parents=True)
+        (source / "livery.cfg").write_text("title=Flat\n", encoding="utf-8")
+        (source / "livery.json").write_text(
+            '{"productPackage": "pmdg-aircraft-77w", "liveryId": "FDX-N868FD-25-JV"}\n',
+            encoding="utf-8",
+        )
+        (source / "texture.example" / "main.png").write_bytes(b"paint")
+
+        result = installer.install_livery(source, self.product())
+
+        destination = (
+            result.livery_package
+            / "SimObjects"
+            / "Airplanes"
+            / "PMDG 777-300ER"
+            / "liveries"
+            / "pmdg"
+        )
+        self.assertTrue((destination / "FDX-N868FD-25-JV" / "texture.example" / "main.png").is_file())
+        self.assertFalse((destination / "livery").exists())
+
     def test_refuses_second_install_unless_overwrite_is_requested(self):
         source = self.root / "Direct Livery"
         (source / "texture.example").mkdir(parents=True)

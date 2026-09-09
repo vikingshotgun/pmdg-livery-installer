@@ -24,6 +24,9 @@ sources, never as an aircraft target.
 
 - MSFS 2024 PMDG livery ZIPs, including a complete `*-liveries` package or a
   ZIP containing `SimObjects`.
+- Flat livery ZIPs are placed in a unique folder based on their PMDG
+  `liveryId`, so installing several aircraft from the same airline does not
+  overwrite earlier liveries.
 - Download wrappers that contain one compatible livery ZIP inside another ZIP
   (up to three nested levels).
 - An extracted livery folder containing `livery.cfg` or texture/model/panel

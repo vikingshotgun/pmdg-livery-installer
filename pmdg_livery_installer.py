@@ -485,6 +485,31 @@ def livery_folder_like(folder: Path) -> bool:
     return any(name.startswith(("texture", "model", "panel")) for name in children)
 
 
+def livery_folder_name(folder: Path) -> str:
+    """Return the stable PMDG folder name for a direct livery source.
+
+    Flat livery ZIPs are extracted into a temporary directory named
+    ``livery``. Using that directory name caused every flat ZIP to overwrite
+    the previous install. PMDG's native packages use the ``liveryId`` from
+    ``livery.json`` as the folder name, so prefer it whenever available.
+    """
+
+    metadata = folder / "livery.json"
+    if not metadata.is_file():
+        return folder.name
+    try:
+        data = json.loads(metadata.read_text(encoding="utf-8-sig"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise InstallError(f"Could not read livery metadata: {metadata}") from exc
+    livery_id = data.get("liveryId") if isinstance(data, dict) else None
+    if not isinstance(livery_id, str) or not livery_id.strip():
+        return folder.name
+    livery_id = livery_id.strip()
+    if livery_id in {".", ".."} or re.search(r'[<>:"/\\|?*\x00-\x1f]', livery_id):
+        raise InstallError(f"The liveryId contains invalid folder characters: {livery_id!r}")
+    return livery_id
+
+
 def find_direct_livery_folders(source: Path) -> list[Path]:
     candidates = [folder for folder in iter_directories(source) if livery_folder_like(folder)]
     selected: list[Path] = []
@@ -776,7 +801,7 @@ def install_livery(
                 )
             livery_parent = destination / "SimObjects" / "Airplanes" / aircraft_folder_for(product) / "liveries" / "pmdg"
             for folder in folders:
-                target = livery_parent / folder.name
+                target = livery_parent / livery_folder_name(folder)
                 copied += copy_tree(folder, target, overwrite)
                 copied_destinations.append(target)
 
